@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { parse } from "papaparse";
 
-// This endpoint serves:  /api/test/saa (redirects to saa3 for backward compatibility)
-// It fetches and parses SAA PT3 CSV from DigitalOcean Spaces
-
 export async function GET() {
   const url =
-    "https://saapracticetests.sfo3.cdn.digitaloceanspaces.com/SAA/SAA%20PT%203%20-%20PT3%20(1).csv";
+    "https://saapracticetests.sfo3.cdn.digitaloceanspaces.com/SAP/SAP%20PT2%20-%20Sheet1.csv";
 
   try {
     const res = await fetch(url);
@@ -22,8 +19,9 @@ export async function GET() {
 
     return NextResponse.json(parsed.data);
   } catch (err: unknown) {
-    console.error("Error fetching/parsing SAA CSV:", err);
+    console.error("Error fetching/parsing SAP2 CSV:", err);
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

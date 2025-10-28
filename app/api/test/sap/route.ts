@@ -3,7 +3,7 @@ import { parse } from "papaparse";
 
 export async function GET() {
   const url =
-    "https://saapracticetests.sfo3.digitaloceanspaces.com/SAP/SAP%20PT%203%20-%20Sheet1.csv";
+    "https://saapracticetests.sfo3.cdn.digitaloceanspaces.com/SAP/SAP%20PT2%20-%20Sheet1.csv";
 
   try {
     const res = await fetch(url);

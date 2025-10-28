@@ -1,7 +1,7 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+const nextConfig = {
+  // experimental: {
+  //   turbo: false, // This is not a valid experimental option in Next.js 16
+  // },
 };
 
 export default nextConfig;
