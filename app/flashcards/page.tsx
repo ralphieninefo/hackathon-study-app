@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Flashcard from "../components/Flashcard";
 
 interface FlashcardData {
@@ -13,7 +13,6 @@ interface FlashcardData {
 
 export default function FlashcardsPage() {
   const [flashcards, setFlashcards] = useState<FlashcardData[]>([]);
-  const [filteredCards, setFilteredCards] = useState<FlashcardData[]>([]);
   const [category, setCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -32,30 +31,14 @@ export default function FlashcardsPage() {
 
   useEffect(() => {
     fetchFlashcards();
-  }, [category]);
+  }, []);
 
-  useEffect(() => {
-    filterCards();
-  }, [searchQuery, flashcards]);
-
-  const fetchFlashcards = async () => {
-    setLoading(true);
-    try {
-      // Fetch all flashcards at once
-      const res = await fetch("/api/flashcards");
-      const data = await res.json();
-      setFlashcards(Array.isArray(data) ? data : []);
-      setFilteredCards(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error fetching flashcards:", error);
-      setFlashcards([]);
-      setFilteredCards([]);
-    } finally {
-      setLoading(false);
+  // Use useMemo to filter cards reactively
+  const filteredCards = useMemo(() => {
+    if (flashcards.length === 0) {
+      return [];
     }
-  };
 
-  const filterCards = () => {
     let filtered = flashcards;
 
     // Filter by category
@@ -76,13 +59,43 @@ export default function FlashcardsPage() {
       );
     }
 
-    setFilteredCards(filtered);
+    return filtered;
+  }, [flashcards, category, searchQuery]);
+
+  const fetchFlashcards = async () => {
+    setLoading(true);
+    try {
+      // Fetch all flashcards at once
+      const res = await fetch("/api/flashcards");
+      const data = await res.json();
+      setFlashcards(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error fetching flashcards:", error);
+      setFlashcards([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const [shuffledOrder, setShuffledOrder] = useState<number[]>([]);
+
+  const displayCards = useMemo(() => {
+    if (shuffledOrder.length > 0 && shuffledOrder.length === filteredCards.length) {
+      return shuffledOrder.map(index => filteredCards[index]);
+    }
+    return filteredCards;
+  }, [filteredCards, shuffledOrder]);
+
   const shuffleCards = () => {
-    const shuffled = [...filteredCards].sort(() => Math.random() - 0.5);
-    setFilteredCards(shuffled);
+    const indices = Array.from({ length: filteredCards.length }, (_, i) => i);
+    const shuffled = indices.sort(() => Math.random() - 0.5);
+    setShuffledOrder(shuffled);
   };
+
+  // Reset shuffle when filters change
+  useEffect(() => {
+    setShuffledOrder([]);
+  }, [category, searchQuery]);
 
   if (loading) {
     return (
@@ -158,6 +171,7 @@ export default function FlashcardsPage() {
           <div className="mt-4 pt-4 border-t border-gray-700">
             <p className="text-sm text-gray-300">
               Showing {filteredCards.length} of {flashcards.length} flashcards
+              {category !== "all" && ` in ${category}`}
               {searchQuery && ` for "${searchQuery}"`}
             </p>
           </div>
@@ -182,9 +196,9 @@ export default function FlashcardsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredCards.map((card) => (
+            {displayCards.map((card, index) => (
               <Flashcard
-                key={card.id}
+                key={`${card.category || 'unknown'}-${card.service || 'unknown'}-${card.id || index}-${index}`}
                 front={card.front}
                 back={card.back}
               />

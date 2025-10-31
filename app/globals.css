@@ -24,3 +24,36 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Fix text selection colors - works on both light and dark backgrounds */
+::selection {
+  background-color: #3b82f6 !important; /* blue-500 */
+  color: white !important;
+}
+
+::-moz-selection {
+  background-color: #3b82f6 !important; /* blue-500 */
+  color: white !important;
+}
+
+/* Ensure selection is visible on all text elements and nested components */
+*::selection,
+*::-moz-selection,
+p::selection,
+p::-moz-selection,
+span::selection,
+span::-moz-selection,
+h1::selection,
+h1::-moz-selection,
+h2::selection,
+h2::-moz-selection,
+h3::selection,
+h3::-moz-selection,
+div::selection,
+div::-moz-selection,
+label::selection,
+label::-moz-selection {
+  background-color: #3b82f6 !important;
+  color: white !important;
+  -webkit-text-fill-color: white !important;
+}

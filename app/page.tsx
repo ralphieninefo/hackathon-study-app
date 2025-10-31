@@ -6,27 +6,29 @@ export default function Home() {
       <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-700 text-white p-6">
         <div className="text-center space-y-8 max-w-7xl w-full">
           <div className="space-y-4">
-            <h1 className="text-5xl font-bold">AWS One Stop</h1>
+            <h1 className="text-4xl md:text-5xl font-bold">
+              Raph Hackathon: AWS Study Shop and feature comparison
+            </h1>
             <p className="text-xl text-blue-100">
-              Master AWS certifications and discover DigitalOcean alternatives
+              SAA and SAP study buddy and help deciphering all those AWS features to the DO tool stack
             </p>
           </div>
           
           {/* Three Equal Feature Cards */}
           <div className="grid md:grid-cols-3 gap-6 mt-12">
-            {/* Compare DO-AWS Card */}
+            {/* DO <> AWS Comparison Card */}
             <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl hover:bg-white/15 transition-all transform hover:scale-105 flex flex-col h-full">
               <div className="flex flex-col items-center space-y-4 flex-grow">
-                <h2 className="text-3xl font-bold text-center">Compare DigitalOcean to AWS</h2>
+                <h2 className="text-3xl font-bold text-center">DO &lt;&gt; AWS Comparison</h2>
                 <p className="text-blue-100 text-center">
-                  Find the perfect DigitalOcean alternatives to your AWS services. Get personalized recommendations, pricing comparisons, and migration guidance.
+                  Compare AWS services to DigitalOcean products first, or open-source alternatives when DO doesn't have a native solution.
                 </p>
               </div>
               <a
                 href="/compare"
                 className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 rounded-xl shadow-lg transition text-lg text-center mt-6"
               >
-                Start Comparison →
+                Search Alternatives →
               </a>
             </div>
 

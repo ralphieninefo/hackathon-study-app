@@ -1,364 +1,273 @@
 "use client";
 
-import { useState } from "react";
-import DOComparisonChatbot from "../components/DOComparisonChatbot";
-
-interface Recommendation {
-  service: string;
-  mapping: {
-    doProduct: string;
-    doProductDescription: string;
-    features: string[];
-    pricingHighlights: string;
-    migrationComplexity: string;
-    migrationDifficulty: number;
-    awsDocs: string;
-    doDocs: string;
-    keyDifferences: string[];
-  };
-}
+import { useState, useMemo } from "react";
+import { getAWSComparisons, ComparisonResult } from "@/lib/aws-do-comparison";
+import { AWS_DO_MAPPINGS } from "@/lib/do-aws-mappings";
+import { AWS_OPENSOURCE_MAPPINGS } from "@/lib/aws-open-source-mappings";
 
 export default function ComparePage() {
-  const [step, setStep] = useState(1);
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [useCase, setUseCase] = useState("");
-  const [priorities, setPriorities] = useState<string[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [showChatbot, setShowChatbot] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<ComparisonResult[]>([]);
 
-  const awsServices = [
-    "Lambda",
-    "EC2",
-    "S3",
-    "RDS",
-    "VPC",
-    "CloudFront",
-    "Route 53",
-    "Elastic Beanstalk",
-    "DynamoDB",
-    "SNS"
-  ];
+  // Get all available AWS services (both DO and open-source)
+  const availableServices = useMemo(() => {
+    const doServices = Object.keys(AWS_DO_MAPPINGS);
+    const openSourceServices = Object.keys(AWS_OPENSOURCE_MAPPINGS);
+    // Combine and deduplicate
+    const all = [...new Set([...doServices, ...openSourceServices])];
+    return all.sort();
+  }, []);
 
-  const useCases = [
-    "Web Application Hosting",
-    "API Development",
-    "Data Storage & Backups",
-    "DevOps & CI/CD",
-    "Database Management",
-    "Content Delivery",
-    "Machine Learning"
-  ];
+  // Filter services based on search
+  const filteredServices = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return [];
+    }
 
-  const priorityOptions = [
-    "Cost Optimization",
-    "Performance",
-    "Simplicity",
-    "Migration Ease",
-    "Scalability",
-    "Security"
-  ];
-
-  const handleServiceToggle = (service: string) => {
-    setSelectedServices(prev =>
-      prev.includes(service)
-        ? prev.filter(s => s !== service)
-        : [...prev, service]
+    const query = searchQuery.toLowerCase().trim();
+    const matched = availableServices.filter(service =>
+      service.toLowerCase().includes(query)
     );
+
+    return matched;
+  }, [searchQuery, availableServices]);
+
+  const handleShowAlternative = (service: string) => {
+    const comparisons = getAWSComparisons([service]);
+    setResults(comparisons);
   };
 
-  const handlePriorityToggle = (priority: string) => {
-    setPriorities(prev =>
-      prev.includes(priority)
-        ? prev.filter(p => p !== priority)
-        : [...prev, priority]
-    );
-  };
-
-  const handleNext = () => {
-    if (step === 1 && selectedServices.length === 0) {
-      alert("Please select at least one AWS service");
-      return;
-    }
-    if (step === 2 && !useCase) {
-      alert("Please select a use case");
-      return;
-    }
-    setStep(step + 1);
-  };
-
-  const handleGetRecommendations = async () => {
-    if (priorityOptions.length === 0) {
-      alert("Please select at least one priority");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await fetch("/api/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ awsServices: selectedServices })
-      });
-      
-      const data = await response.json();
-      setRecommendations(data.recommendations);
-      setStep(4);
-    } catch (error) {
-      console.error("Failed to get recommendations:", error);
-      alert("Failed to load recommendations. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getComplexityColor = (complexity: string) => {
-    switch (complexity) {
-      case "Easy": return "text-green-600 bg-green-100";
-      case "Medium": return "text-yellow-600 bg-yellow-100";
-      case "Hard": return "text-red-600 bg-red-100";
-      default: return "text-gray-600 bg-gray-100";
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "DO Product": return "bg-blue-600 text-white";
+      case "Open Source": return "bg-green-900 text-green-200";
+      case "Self-Hosted": return "bg-blue-900 text-blue-200";
+      case "Alternative Platform": return "bg-purple-900 text-purple-200";
+      default: return "bg-gray-700 text-gray-200";
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-gray-900 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            AWS to DigitalOcean Migration Guide
+          <h1 className="text-4xl font-bold text-white mb-2">
+            DigitalOcean &lt;&gt; AWS Comparison
           </h1>
-          <p className="text-gray-600">
-            Get personalized recommendations for migrating from AWS to DigitalOcean
+          <p className="text-gray-300 text-lg">
+            Find DigitalOcean products or open-source alternatives to AWS services
           </p>
         </div>
 
-        {/* Progress Bar */}
-        <div className="max-w-3xl mx-auto mb-12">
-          <div className="flex items-center">
-            {[1, 2, 3, 4].map((s) => (
-              <div key={s} className="flex items-center flex-1">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
-                  s <= step ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
-                }`}>
-                  {s}
-                </div>
-                {s < 4 && (
-                  <div className={`flex-1 h-1 mx-2 ${
-                    s < step ? "bg-blue-600" : "bg-gray-300"
-                  }`} />
-                )}
-              </div>
-            ))}
+        {/* Search */}
+        <div className="bg-gray-800 rounded-2xl shadow-lg p-6 mb-8 border border-gray-700">
+          <label className="block text-sm font-semibold text-gray-300 mb-3">
+            Enter an AWS service (e.g., CloudFormation)
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Type AWS service name (e.g., CloudFormation, Lambda, S3)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-4 bg-gray-700 border-2 border-gray-600 rounded-lg focus:border-blue-500 focus:outline-none transition text-lg text-white placeholder-gray-400"
+            />
           </div>
+
+          {/* Search Suggestions */}
+          {filteredServices.length > 0 && (
+            <div className="mt-4 bg-gray-700 rounded-lg p-4 border border-gray-600">
+              <p className="text-sm font-semibold text-gray-300 mb-2">Matching services:</p>
+              <div className="flex flex-wrap gap-2">
+                {filteredServices.map((service) => (
+                  <button
+                    key={service}
+                    onClick={() => {
+                      setSearchQuery(service);
+                      handleShowAlternative(service);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm font-medium"
+                  >
+                    {service} →
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Available Services Hint */}
+          {searchQuery.length === 0 && (
+            <div className="mt-4 text-sm text-gray-400">
+              <p className="mb-2">Available services:</p>
+              <div className="flex flex-wrap gap-2">
+                {availableServices.map((service) => (
+                  <button
+                    key={service}
+                    onClick={() => {
+                      setSearchQuery(service);
+                      handleShowAlternative(service);
+                    }}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded text-xs transition"
+                  >
+                    {service}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Step 1: Select AWS Services */}
-        {step === 1 && (
-          <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold mb-6">Which AWS services do you currently use?</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              {awsServices.map((service) => (
-                <button
-                  key={service}
-                  onClick={() => handleServiceToggle(service)}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    selectedServices.includes(service)
-                      ? "border-blue-600 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-400"
-                  }`}
-                >
-                  {service}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={handleNext}
-              className="mt-8 w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-            >
-              Continue →
-            </button>
-          </div>
-        )}
-
-        {/* Step 2: Use Case */}
-        {step === 2 && (
-          <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold mb-6">What's your primary use case?</h2>
-            <div className="space-y-3">
-              {useCases.map((uc) => (
-                <button
-                  key={uc}
-                  onClick={() => setUseCase(uc)}
-                  className={`w-full p-4 rounded-lg border-2 transition ${
-                    useCase === uc
-                      ? "border-blue-600 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-400"
-                  }`}
-                >
-                  {uc}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-4 mt-8">
-              <button
-                onClick={() => setStep(step - 1)}
-                className="flex-1 bg-gray-600 text-white py-3 rounded-lg hover:bg-gray-700 transition"
-              >
-                ← Back
-              </button>
-              <button
-                onClick={handleNext}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-              >
-                Continue →
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Priorities */}
-        {step === 3 && (
-          <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold mb-6">What matters most to you? (Select all that apply)</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              {priorityOptions.map((priority) => (
-                <button
-                  key={priority}
-                  onClick={() => handlePriorityToggle(priority)}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    priorities.includes(priority)
-                      ? "border-blue-600 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-400"
-                  }`}
-                >
-                  {priority}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-4 mt-8">
-              <button
-                onClick={() => setStep(step - 1)}
-                className="flex-1 bg-gray-600 text-white py-3 rounded-lg hover:bg-gray-700 transition"
-              >
-                ← Back
-              </button>
-              <button
-                onClick={handleGetRecommendations}
-                disabled={loading || priorities.length === 0}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-              >
-                {loading ? "Loading..." : "Get Recommendations →"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Results */}
-        {step === 4 && recommendations.length > 0 && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <h2 className="text-3xl font-bold mb-6">Your DigitalOcean Recommendations</h2>
+        {/* Results */}
+        {results.length > 0 && (
+          <div className="space-y-6">
+            {results.map((result, idx) => {
+              const { service, type, doMapping, openSourceMapping } = result;
+              const isDOProduct = type === "DO Product";
+              const mapping = doMapping || openSourceMapping;
               
-              {/* Summary */}
-              <div className="bg-blue-50 rounded-lg p-6 mb-8">
-                <p className="text-lg mb-4">
-                  Based on your AWS services ({selectedServices.join(", ")}) and priorities ({priorities.join(", ")}) 
-                  in {useCase}, here are the best DigitalOcean alternatives:
-                </p>
-              </div>
-
-              {/* Recommendations */}
-              {recommendations.map((rec, idx) => (
-                <div key={idx} className="border-2 border-gray-200 rounded-lg p-6 mb-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-2xl font-bold text-blue-600">{rec.mapping.doProduct}</h3>
-                      <p className="text-gray-600">{rec.mapping.doProductDescription}</p>
+              return (
+                <div 
+                  key={idx} 
+                  className={`bg-gray-800 rounded-2xl shadow-lg p-8 border-2 ${
+                    isDOProduct ? 'border-blue-500' : 'border-green-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="text-center flex-1">
+                      <h3 className="text-2xl font-bold text-white mb-1">{service}</h3>
+                      <p className="text-gray-400">AWS Service</p>
                     </div>
-                    <span className={`px-4 py-2 rounded-full font-semibold ${getComplexityColor(rec.mapping.migrationComplexity)}`}>
-                      Migration: {rec.mapping.migrationComplexity}
-                    </span>
+                    <div className="text-4xl text-gray-500">→</div>
+                    <div className="text-center flex-1">
+                      <h3 className={`text-2xl font-bold mb-1 ${
+                        isDOProduct ? 'text-blue-400' : 'text-green-400'
+                      }`}>
+                        {isDOProduct ? doMapping?.doProduct : openSourceMapping?.alternative}
+                      </h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getTypeColor(type)}`}>
+                        {type}
+                      </span>
+                      {!isDOProduct && openSourceMapping && (
+                        <p className="text-gray-400 text-sm mt-1">{openSourceMapping.category}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`rounded-lg p-6 mb-6 border ${
+                    isDOProduct 
+                      ? 'bg-blue-900/30 border-blue-800' 
+                      : 'bg-green-900/30 border-green-800'
+                  }`}>
+                    <p className="text-gray-200 leading-relaxed">
+                      {isDOProduct ? doMapping?.doProductDescription : openSourceMapping?.description}
+                    </p>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-6">
                     <div>
-                      <h4 className="font-bold mb-2">Key Features</h4>
-                      <ul className="list-disc list-inside space-y-1 text-gray-700">
-                        {rec.mapping.features.map((feature, i) => (
+                      <h4 className="font-bold text-lg mb-3 text-white">Key Features</h4>
+                      <ul className="list-disc list-inside space-y-2 text-gray-300">
+                        {mapping?.features?.map((feature: string, i: number) => (
                           <li key={i}>{feature}</li>
                         ))}
                       </ul>
                     </div>
                     <div>
-                      <h4 className="font-bold mb-2">Pricing</h4>
-                      <p className="text-gray-700">{rec.mapping.pricingHighlights}</p>
-                      
-                      <h4 className="font-bold mb-2 mt-4">Differences from AWS</h4>
-                      <ul className="list-disc list-inside space-y-1 text-gray-700">
-                        {rec.mapping.keyDifferences.map((diff, i) => (
+                      <h4 className="font-bold text-lg mb-3 text-white">
+                        {isDOProduct ? "Key Differences" : "Key Differences"}
+                      </h4>
+                      <ul className="list-disc list-inside space-y-2 text-gray-300">
+                        {(isDOProduct ? doMapping?.keyDifferences : openSourceMapping?.keyDifferences)?.map((diff: string, i: number) => (
                           <li key={i}>{diff}</li>
                         ))}
                       </ul>
                     </div>
                   </div>
 
-                  <div className="flex gap-4 mt-4">
+                  {isDOProduct && doMapping?.pricingHighlights && (
+                    <div className="mt-6 pt-6 border-t border-gray-700">
+                      <h4 className="font-bold text-lg mb-2 text-white">Pricing</h4>
+                      <p className="text-blue-300 text-sm">{doMapping.pricingHighlights}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-6 pt-6 border-t border-gray-700">
+                    <h4 className="font-bold text-lg mb-3 text-white">Use Cases</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {(isDOProduct ? doMapping?.useCaseRecommendations : openSourceMapping?.useCases)?.map((useCase: string, i: number) => (
+                        <span key={i} className="px-3 py-1 bg-indigo-900 text-indigo-200 rounded-full text-sm">
+                          {useCase}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 mt-6">
                     <a
-                      href={rec.mapping.awsDocs}
+                      href={isDOProduct ? doMapping?.awsDocs : openSourceMapping?.awsDocs}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition"
                     >
-                      AWS Docs →
+                      AWS Docs
                     </a>
                     <a
-                      href={rec.mapping.doDocs}
+                      href={isDOProduct ? doMapping?.doDocs : openSourceMapping?.alternativeDocs}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className={`px-4 py-2 text-white rounded-lg transition ${
+                        isDOProduct 
+                          ? 'bg-blue-600 hover:bg-blue-700' 
+                          : 'bg-green-600 hover:bg-green-700'
+                      }`}
                     >
-                      DO Docs →
+                      {isDOProduct ? 'DO Docs' : `${openSourceMapping?.alternative} Docs`}
                     </a>
                   </div>
                 </div>
-              ))}
+              );
+            })}
 
-              {/* Action Buttons */}
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={() => setShowChatbot(true)}
-                  className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition"
-                >
-                  💬 Chat with DO Expert
-                </button>
-                <button
-                  onClick={() => window.location.href = "/"}
-                  className="flex-1 bg-gray-600 text-white py-3 rounded-lg hover:bg-gray-700 transition"
-                >
-                  Back to Home
-                </button>
-                <button
-                  onClick={() => { setStep(1); setSelectedServices([]); setUseCase(""); setPriorities([]); }}
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-                >
-                  New Comparison
-                </button>
-              </div>
+            {/* Action Buttons */}
+            <div className="flex gap-4">
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setResults([]);
+                }}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg transition font-semibold"
+              >
+                New Search
+              </button>
+              <button
+                onClick={() => window.location.href = "/"}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition font-semibold"
+              >
+                Back to Home
+              </button>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Show chatbot when requested */}
-      {showChatbot && (
-        <DOComparisonChatbot 
-          awsServices={selectedServices}
-          priorities={priorities}
-        />
-      )}
+        {/* Empty State */}
+        {searchQuery.length > 0 && results.length === 0 && filteredServices.length === 0 && (
+          <div className="bg-gray-800 rounded-2xl shadow-lg p-12 text-center border border-gray-700">
+            <p className="text-xl text-gray-300 mb-4">
+              No DigitalOcean product or open-source alternative found for "{searchQuery}"
+            </p>
+            <p className="text-gray-400 mb-6">
+              Try searching for: EC2, Lambda, S3, RDS, CloudFormation, CloudWatch, Route 53, Managed VPN, or DynamoDB
+            </p>
+            <button
+              onClick={() => setSearchQuery("")}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+            >
+              Clear Search
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-

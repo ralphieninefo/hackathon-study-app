@@ -59,6 +59,42 @@ export default function Chatbot({ context, score, totalQuestions, examType, doma
     };
   }, [context, score, totalQuestions, examType, domainBreakdown]);
 
+  // Programmatic opener to surface the widget when requested
+  useEffect(() => {
+    function tryOpen(): boolean {
+      try { if ((window as any).doAI?.open) { (window as any).doAI.open(); return true; } } catch {}
+      try { if ((window as any).DOAI?.open) { (window as any).DOAI.open(); return true; } } catch {}
+
+      try {
+        const btns = Array.from(document.querySelectorAll('button')) as HTMLButtonElement[];
+        const candidate = btns.find((b) => {
+          const label = (b.getAttribute('title') || b.getAttribute('aria-label') || b.textContent || '').toLowerCase();
+          const style = window.getComputedStyle(b);
+          const isFixed = style.position === 'fixed';
+          const nearBR = isFixed && (parseInt(style.right || '0', 10) >= 0) && (parseInt(style.bottom || '0', 10) >= 0);
+          return label.includes('chat') || label.includes('help') || nearBR;
+        });
+        if (candidate) { candidate.click(); return true; }
+      } catch {}
+
+      return false;
+    }
+
+    (window as any).openStudyChatbot = () => {
+      if (!tryOpen()) {
+        const observer = new MutationObserver((_m, obs) => {
+          if (tryOpen()) obs.disconnect();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 5000);
+      }
+    };
+
+    const onOpen = () => (window as any).openStudyChatbot?.();
+    window.addEventListener('open-chatbot', onOpen);
+    return () => window.removeEventListener('open-chatbot', onOpen);
+  }, []);
+
   // This component doesn't render anything directly
   // The chatbot widget is injected by the external script
   return null;

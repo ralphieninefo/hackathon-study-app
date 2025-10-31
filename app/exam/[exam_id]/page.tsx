@@ -1,8 +1,35 @@
 "use client";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useEffect } from "react";
 
 export default function ExamSelectionPage() {
+  useEffect(() => {
+    // Inject selection styles directly into document head
+    const styleId = 'selection-override-styles';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        *::selection {
+          background-color: #3b82f6 !important;
+          color: white !important;
+          -webkit-text-fill-color: white !important;
+        }
+        *::-moz-selection {
+          background-color: #3b82f6 !important;
+          color: white !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    return () => {
+      const styleElement = document.getElementById(styleId);
+      if (styleElement) {
+        styleElement.remove();
+      }
+    };
+  }, []);
   const { exam_id } = useParams();
   const examName = exam_id?.toString().toUpperCase() || "";
   
@@ -36,15 +63,15 @@ export default function ExamSelectionPage() {
               href={`/test/${exam.id}`}
               className={`p-6 rounded-2xl shadow-lg transition transform hover:scale-105 ${
                 exam.isMini
-                  ? "bg-green-500 hover:bg-green-400"
-                  : "bg-white text-blue-700 hover:bg-blue-50"
+                  ? "bg-green-500 hover:bg-green-400 text-white"
+                  : "bg-white text-blue-700 hover:bg-blue-100 hover:text-blue-900"
               }`}
             >
               <div className="text-center">
-                <h2 className={`text-2xl font-bold mb-2 ${exam.isMini ? "text-white" : ""}`}>
+                <h2 className={`text-2xl font-bold mb-2 ${exam.isMini ? "text-white" : "text-blue-700"}`}>
                   {exam.isMini ? "🎯" : "📚"} {exam.name}
                 </h2>
-                <p className={`text-sm ${exam.isMini ? "text-green-50" : "text-gray-600"}`}>
+                <p className={`text-sm ${exam.isMini ? "text-green-50" : "text-gray-700"}`}>
                   {exam.description}
                 </p>
               </div>

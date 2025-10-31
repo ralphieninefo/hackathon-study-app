@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDoRecommendations, getMigrationComplexity } from "@/lib/do-aws-mappings";
+import { getAWSComparisons } from "@/lib/aws-do-comparison";
 
 export async function POST(request: Request) {
   try {
@@ -13,14 +13,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const recommendations = getDoRecommendations(awsServices);
-    const complexity = getMigrationComplexity(recommendations);
+    const comparisons = getAWSComparisons(awsServices);
 
     return NextResponse.json({
-      recommendations,
-      complexity,
+      recommendations: comparisons,
       totalServices: awsServices.length,
-      mappedServices: recommendations.length
+      mappedServices: comparisons.length
     });
   } catch (error) {
     console.error("Error generating recommendations:", error);

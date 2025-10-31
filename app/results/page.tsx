@@ -18,7 +18,8 @@ interface Question {
   "Other Options"?: string;
   Explanation: string;
   Domain: string;
-  Reference: string;
+  Reference?: string;
+  [key: string]: any; // Allow for case variations
 }
 
 interface Answer {
@@ -34,6 +35,7 @@ export default function ResultsPage() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [domainBreakdown, setDomainBreakdown] = useState<Record<string, {correct: number, total: number}>>({});
   const [isMiniQuiz, setIsMiniQuiz] = useState(false);
+  const [chatbotContext, setChatbotContext] = useState<string | undefined>(undefined);
   const router = useRouter();
 
   useEffect(() => {
@@ -58,12 +60,18 @@ export default function ResultsPage() {
 
   const fetchQuestions = async (examType: string) => {
     try {
-      // For mini quizzes, try to use the saved questions from the test
-      const savedQuestions = localStorage.getItem("testQuestions");
-      if (savedQuestions) {
-        setQuestions(JSON.parse(savedQuestions));
-        setLoading(false);
-        return;
+      // Only use saved mini-quiz questions if we were in mini-quiz mode
+      const wasMiniQuiz = localStorage.getItem('isMiniQuiz') === 'true';
+      if (wasMiniQuiz) {
+        const savedQuestions = localStorage.getItem("testQuestions");
+        if (savedQuestions) {
+          setQuestions(JSON.parse(savedQuestions));
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Ensure stale mini-quiz questions don't leak into full exam results
+        localStorage.removeItem("testQuestions");
       }
       
       // Otherwise fetch from API
@@ -156,12 +164,28 @@ export default function ResultsPage() {
   const getOptionText = (question: Question, answerStr: string): string => {
     const optionMap: Record<string, string> = {};
     
-    if (question["Option A"]) optionMap['A'] = question["Option A"];
-    if (question["Option B"]) optionMap['B'] = question["Option B"];
-    if (question["Option C"]) optionMap['C'] = question["Option C"];
-    if (question["Option D"]) optionMap['D'] = question["Option D"];
-    if (question["Option E"]) optionMap['E'] = question["Option E"];
-    if (question["Option F"]) optionMap['F'] = question["Option F"];
+    const addIf = (letter: string, value: unknown) => {
+      if (typeof value === 'string' && value.trim()) optionMap[letter] = value.trim();
+    };
+    // Populate from common columns
+    addIf('A', (question as any)["Option A"] || (question as any)["Option a"] || (question as any)["A"] || (question as any)["Answer A"] || (question as any)["Choice A"]);
+    addIf('B', (question as any)["Option B"] || (question as any)["Option b"] || (question as any)["B"] || (question as any)["Answer B"] || (question as any)["Choice B"]);
+    addIf('C', (question as any)["Option C"] || (question as any)["Option c"] || (question as any)["C"] || (question as any)["Answer C"] || (question as any)["Choice C"]);
+    addIf('D', (question as any)["Option D"] || (question as any)["Option d"] || (question as any)["D"] || (question as any)["Answer D"] || (question as any)["Choice D"]);
+    addIf('E', (question as any)["Option E"] || (question as any)["Option e"] || (question as any)["E"] || (question as any)["Answer E"] || (question as any)["Choice E"]);
+    addIf('F', (question as any)["Option F"] || (question as any)["Option f"] || (question as any)["F"] || (question as any)["Answer F"] || (question as any)["Choice F"]);
+
+    // Fallback: combined options parsing
+    if (Object.keys(optionMap).length === 0) {
+      const combined = (question as any)["Other Options"] || (question as any)["Options"] || (question as any)["Choices"];
+      if (typeof combined === 'string') {
+        const regex = /\b([A-Fa-f])\s*[\)\-:\.]\s*([^\n;]+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = regex.exec(combined)) !== null) {
+          optionMap[m[1].toUpperCase()] = m[2].trim();
+        }
+      }
+    }
     
     // If it's already formatted, return as is
     if (answerStr.includes(' - ')) {
@@ -263,10 +287,28 @@ export default function ResultsPage() {
   };
 
   const nextQuiz = () => {
+    // Extract base exam type (saa or sap) regardless of suffix (1, 2, 3, -mini, etc.)
+    const baseType = examType.toLowerCase().startsWith('saa') ? 'saa' : 
+                     examType.toLowerCase().startsWith('sap') ? 'sap' : examType;
+    const miniType = `${baseType}-mini`;
+    
+    // Clear all localStorage keys for both current exam and new mini quiz
     localStorage.removeItem("answers");
     localStorage.removeItem("testQuestions");
     localStorage.removeItem("isMiniQuiz");
-    const miniType = examType.replace('saa', 'saa-mini').replace('sap', 'sap-mini');
+    
+    // Clear exam-specific localStorage keys for the mini quiz (so we get fresh questions)
+    localStorage.removeItem(`answers-${miniType}`);
+    localStorage.removeItem(`questions-${miniType}`);
+    localStorage.removeItem(`flags-${miniType}`);
+    localStorage.removeItem(`current-${miniType}`);
+    
+    // Clear current exam keys too if they exist
+    localStorage.removeItem(`answers-${examType}`);
+    localStorage.removeItem(`questions-${examType}`);
+    localStorage.removeItem(`flags-${examType}`);
+    localStorage.removeItem(`current-${examType}`);
+    
     router.push(`/test/${miniType}`);
   };
 
@@ -278,31 +320,133 @@ export default function ResultsPage() {
     router.push("/");
   };
 
+  // Helper function to get reference field (case-insensitive, multiple possible column names)
+  const getReference = (question: Question): string | undefined => {
+    // Try different case variations and column name variations
+    // Check for: Reference, References, Links, Docs, Documentation, Source, Sources
+    const possibleKeys = [
+      "Reference", "reference", "REFERENCE",
+      "References", "references", "REFERENCES",
+      "Links", "links", "LINKS",
+      "Docs", "docs", "DOCS",
+      "Documentation", "documentation", "DOCUMENTATION",
+      "Source", "source", "SOURCE",
+      "Sources", "sources", "SOURCES"
+    ];
+    
+    // First, try exact matches with common names
+    for (const key of possibleKeys) {
+      const value = (question as any)[key];
+      if (value && typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    
+    // Also check bracket notation for all keys
+    for (const key of possibleKeys) {
+      const value = question[key as keyof Question];
+      if (value && typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    
+    // Fallback: search all properties for any key containing ref, link, doc, or source
+    const lowerKeyTerms = ['ref', 'link', 'doc', 'source'];
+    for (const key in question) {
+      if (question.hasOwnProperty(key)) {
+        const lowerKey = key.toLowerCase();
+        // Check if key contains any of our search terms
+        if (lowerKeyTerms.some(term => lowerKey.includes(term))) {
+          const value = (question as any)[key];
+          if (value && typeof value === 'string' && value.trim()) {
+            return value.trim();
+          }
+        }
+      }
+    }
+    
+    return undefined;
+  };
+
   // Helper function to parse and render links
   const renderLinks = (text: string | undefined) => {
-    if (!text) return null;
+    if (!text || !text.trim()) return null;
     
-    // Split by semicolon to handle multiple URLs
-    const parts = text.split(';').map(p => p.trim()).filter(Boolean);
+    // Split by semicolon to handle multiple URLs, or by comma
+    const separators = [';', ',', '\n'];
+    let parts: string[] = [text];
+    
+    for (const sep of separators) {
+      if (text.includes(sep)) {
+        parts = text.split(sep).map(p => p.trim()).filter(Boolean);
+        break;
+      }
+    }
+    
+    if (parts.length === 0) return null;
     
     return (
-      <span className="space-x-2">
+      <span className="space-x-2 flex flex-wrap gap-2">
         {parts.map((part, idx) => {
-          // Check if it's a URL
-          if (part.startsWith('http://') || part.startsWith('https://')) {
+          const cleanPart = part.trim().replace(/[\s]+/g, ' ');
+          const containsEllipsis = /\.\.\.|\u2026/.test(cleanPart);
+          const displayText = cleanPart.length > 60 ? cleanPart.substring(0, 60) + '...' : cleanPart;
+
+          const toHttps = (val: string) => val.startsWith('www.') ? `https://${val}` : val;
+          const isExplicitUrl = cleanPart.startsWith('http://') || cleanPart.startsWith('https://') || cleanPart.startsWith('www.');
+          const looksLikeAwsDocs = cleanPart.includes('.') && (cleanPart.includes('aws.amazon.com') || cleanPart.includes('docs.aws'));
+
+          // If the reference appears truncated with ellipsis, avoid creating a broken link.
+          if (containsEllipsis) {
+            const query = encodeURIComponent(cleanPart.replace(/\u2026|\.\.\./g, ''));
+            const searchUrl = `https://www.google.com/search?q=${query}+site:docs.aws.amazon.com`;
             return (
-              <a 
+              <span key={idx} className="text-xs text-gray-700 flex items-center gap-2">
+                {displayText}
+                <a
+                  href={searchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline"
+                >
+                  search
+                </a>
+              </span>
+            );
+          }
+
+          if (isExplicitUrl) {
+            const url = toHttps(cleanPart);
+            return (
+              <a
                 key={idx}
-                href={part} 
-                target="_blank" 
+                href={url}
+                target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline text-xs"
+                className="text-blue-600 hover:text-blue-800 underline text-xs break-all"
               >
-                {part.length > 50 ? part.substring(0, 50) + '...' : part}
+                {displayText}
               </a>
             );
           }
-          return <span key={idx} className="text-gray-700 text-xs">{part}</span>;
+
+          if (looksLikeAwsDocs) {
+            const url = 'https://' + cleanPart.replace(/^https?:\/\//, '');
+            return (
+              <a
+                key={idx}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline text-xs break-all"
+              >
+                {displayText}
+              </a>
+            );
+          }
+
+          // Plain text fallback
+          return <span key={idx} className="text-gray-700 text-xs">{displayText}</span>;
         })}
       </span>
     );
@@ -350,6 +494,21 @@ export default function ResultsPage() {
             <p className="text-gray-600">Here's how you performed</p>
           </div>
 
+          {/* Chatbot RAG Tip */}
+          <div className="mb-6">
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
+              <p className="text-sm leading-relaxed">
+                <span className="font-semibold">Tip:</span> The chatbot in the bottom-right corner uses RAG and includes access to the test questions and correct answers for review.
+              </p>
+              <p className="text-sm leading-relaxed mt-2">
+                Because the DigitalOcean AI Agent is embedded via an iframe sandbox, it cannot directly access or reference the live page context (such as your score or exam state). This is a product limitation, not an application limitation.
+              </p>
+              <p className="text-sm leading-relaxed mt-2">
+                👉 <a href="https://docs.digitalocean.com/products/gradient-ai-platform/how-to/use-agents/?utm_source=chatgpt.com" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline hover:text-blue-900">DigitalOcean AI Agents Documentation</a>
+              </p>
+            </div>
+          </div>
+
           {/* Score Card */}
           <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
             <div className="text-center">
@@ -372,6 +531,12 @@ export default function ResultsPage() {
                     Next Quiz
                   </button>
                 )}
+                <button
+                  onClick={() => router.push(`/exam/${examType.replace('-mini', '')}`)}
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition"
+                >
+                  Back to Exams
+                </button>
                 <button
                   onClick={retakeTest}
                   className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
@@ -410,7 +575,7 @@ export default function ResultsPage() {
                 const correctAnswerText = correctLetters ? getOptionText(question, correctLetters) : 'No correct answer data available';
                 
                 return (
-                  <div key={questionId} className={`border-l-4 p-4 rounded-r-lg ${
+                  <div key={`${questionId ?? 'q'}-${index}`} className={`border-l-4 p-4 rounded-r-lg ${
                     isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'
                   }`}>
                     <div className="flex items-start justify-between mb-2">
@@ -436,7 +601,7 @@ export default function ResultsPage() {
                         </p>
                       </div>
                       <div className="border-t pt-3">
-                        <p className="font-semibold text-gray-900 mb-2">Correct Answer:</p>
+                        <p className="font-semibold text-gray-900 mb-2">Correct Answer (full text):</p>
                         <p className="p-3 rounded-lg bg-blue-100 text-blue-900 border border-blue-300 text-sm leading-relaxed">
                           {correctAnswerText}
                         </p>
@@ -444,7 +609,7 @@ export default function ResultsPage() {
                     </div>
                     
                     <div className="mt-4 bg-gray-50 p-3 rounded-lg">
-                      <p className="font-semibold text-gray-900 mb-2">Explanation:</p>
+                      <p className="font-semibold text-gray-900 mb-2">Why this is correct:</p>
                       <p className="text-gray-700 text-sm leading-relaxed">{question.Explanation}</p>
                     </div>
                     
@@ -455,12 +620,15 @@ export default function ResultsPage() {
                           <span className="text-blue-700">{getCleanDomainName(question.Domain)}</span>
                         </div>
                       )}
-                      {question.Reference && (
-                        <div className="flex items-center gap-1">
-                          <span className="font-semibold text-gray-600">References:</span>
-                          <div className="flex gap-2">{renderLinks(question.Reference)}</div>
-                        </div>
-                      )}
+                      {(() => {
+                        const reference = getReference(question);
+                        return reference && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="font-semibold text-gray-600">References:</span>
+                            {renderLinks(reference)}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -474,6 +642,7 @@ export default function ResultsPage() {
         totalQuestions={totalQuestions} 
         examType={examType} 
         domainBreakdown={domainBreakdown}
+        context={chatbotContext}
       />
     </>
   );

@@ -3,6 +3,32 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 
 export default function TestPage() {
+  // Inject selection styles on component mount
+  useEffect(() => {
+    const styleId = 'test-page-selection-styles';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        *::selection {
+          background-color: #3b82f6 !important;
+          color: white !important;
+          -webkit-text-fill-color: white !important;
+        }
+        *::-moz-selection {
+          background-color: #3b82f6 !important;
+          color: white !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    return () => {
+      const styleElement = document.getElementById(styleId);
+      if (styleElement) {
+        styleElement.remove();
+      }
+    };
+  }, []);
   const { exam_id } = useParams(); // "sap" or "saa"
   const [questions, setQuestions] = useState<any[]>([]);
   const [current, setCurrent] = useState(0);
@@ -116,36 +142,96 @@ export default function TestPage() {
   // Get current question safely
   const q = questions[current];
 
-  // Read options (safe with ?)
-  const optionA = q?.["Option A"]?.trim() || q?.["Option a"]?.trim() || "";
-  const optionB = q?.["Option B"]?.trim() || q?.["Option b"]?.trim() || "";
-  const optionC = q?.["Option C"]?.trim() || q?.["Option c"]?.trim() || "";
-  const optionD = q?.["Option D"]?.trim() || q?.["Option d"]?.trim() || "";
-  const optionE = q?.["Option E"]?.trim() || q?.["Option e"]?.trim() || "";
-  const optionF = q?.["Option F"]?.trim() || q?.["Option f"]?.trim() || "";
-  
-  // Combine all options from individual columns, filtering out empty values
-  const options = [
-    optionA,
-    optionB,
-    optionC,
-    optionD,
-    optionE,
-    optionF
-  ].filter((opt): opt is string => Boolean(opt));
+  // Build option map from various possible CSV schemas
+  const buildOptionMap = (): Record<string, string> => {
+    const map: Record<string, string> = {};
+    if (!q) return map;
+
+    // Common explicit columns
+    const candidates: Array<[string, string[]]> = [
+      ['A', ["Option A", "Option a", "A", "Answer A", "Choice A"]],
+      ['B', ["Option B", "Option b", "B", "Answer B", "Choice B"]],
+      ['C', ["Option C", "Option c", "C", "Answer C", "Choice C"]],
+      ['D', ["Option D", "Option d", "D", "Answer D", "Choice D"]],
+      ['E', ["Option E", "Option e", "E", "Answer E", "Choice E"]],
+      ['F', ["Option F", "Option f", "F", "Answer F", "Choice F"]],
+    ];
+
+    for (const [letter, keys] of candidates) {
+      for (const key of keys) {
+        const val = (q as any)[key];
+        if (typeof val === 'string' && val.trim()) {
+          map[letter] = val.trim();
+          break;
+        }
+      }
+    }
+
+    // Fallback: parse a combined options field
+    const combinedField = (q as any)["Other Options"] || (q as any)["Options"] || (q as any)["Choices"];
+    if (combinedField && typeof combinedField === 'string') {
+      const text = combinedField as string;
+      const regex = /\b([A-Fa-f])\s*[\)\-:\.]\s*([^\n;]+)/g; // A) text, A - text, A: text
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(text)) !== null) {
+        const letter = match[1].toUpperCase();
+        const value = match[2].trim();
+        if (value) map[letter] = value;
+      }
+    }
+
+    return map;
+  };
+
+  const optionMap = buildOptionMap();
+  const optionA = optionMap['A'] || "";
+  const optionB = optionMap['B'] || "";
+  const optionC = optionMap['C'] || "";
+  const optionD = optionMap['D'] || "";
+  const optionE = optionMap['E'] || "";
+  const optionF = optionMap['F'] || "";
+
+  // Options list in canonical A-F order
+  const options = ['A','B','C','D','E','F']
+    .map(l => optionMap[l])
+    .filter((opt): opt is string => Boolean(opt));
   
   // Use useMemo to shuffle only when current question changes
   const shuffledOptions = useMemo(() => {
     return [...options].sort(() => Math.random() - 0.5);
   }, [current, optionA, optionB, optionC, optionD, optionE, optionF]);
 
-  // Check if this is a "choose 2" or multiple selection question
-  // Use the new "Multi-Select" column if available
-  const isMultipleChoice = q?.["Multi-Select"]?.toLowerCase() === "true" || 
-                           q?.Question?.toLowerCase().includes("select two") || 
-                           q?.Question?.toLowerCase().includes("choose two") ||
-                           q?.Question?.toLowerCase().includes("select 2") ||
-                           q?.Question?.toLowerCase().includes("choose 2");
+  // Determine if this is a multi-select question and how many selections are allowed
+  // Prefer explicit column, then parse question text hints, finally fall back to correct letters length
+  const lowerQuestion = (q?.Question || "").toLowerCase();
+  const isMultipleChoice = q?.["Multi-Select"]?.toLowerCase() === "true" ||
+    /\b(select|choose)\b/.test(lowerQuestion);
+
+  const parseMaxFromText = () => {
+    const matchWord = lowerQuestion.match(/\b(select|choose)\s+(one|two|three|four|five|six)\b/);
+    if (matchWord) {
+      const word = matchWord[2];
+      const map: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+      if (map[word] !== undefined) return map[word];
+    }
+    const matchNum = lowerQuestion.match(/\b(select|choose)\s+(\d{1})\b/);
+    if (matchNum) {
+      const num = parseInt(matchNum[2], 10);
+      if (!Number.isNaN(num) && num > 0) return num;
+    }
+    return undefined;
+  };
+
+  const correctLettersLen = (() => {
+    const letters = (q?.["Correct Letters"] || "").toString().trim();
+    if (!letters) return undefined;
+    const onlyLetters = letters.replace(/[^A-F]/gi, "");
+    return onlyLetters.length || undefined;
+  })();
+
+  const maxSelections = isMultipleChoice
+    ? (parseMaxFromText() || correctLettersLen || 2)
+    : 1;
 
   // Now handle answer restoration after variables are defined
   useEffect(() => {
@@ -155,28 +241,12 @@ export default function TestPage() {
     if (savedAnswer && savedAnswer !== '') {
       // Restore single select
       if (!isMultipleChoice && savedAnswer.length === 1) {
-        const optionMap: Record<string, string> = {};
-        if (optionA) optionMap['A'] = optionA;
-        if (optionB) optionMap['B'] = optionB;
-        if (optionC) optionMap['C'] = optionC;
-        if (optionD) optionMap['D'] = optionD;
-        if (optionE) optionMap['E'] = optionE;
-        if (optionF) optionMap['F'] = optionF;
-        
         const selectedText = optionMap[savedAnswer];
         if (selectedText) setSelected(selectedText);
         else setSelected("");
       } 
       // Restore multi-select
       else if (isMultipleChoice && savedAnswer.length > 1) {
-        const optionMap: Record<string, string> = {};
-        if (optionA) optionMap['A'] = optionA;
-        if (optionB) optionMap['B'] = optionB;
-        if (optionC) optionMap['C'] = optionC;
-        if (optionD) optionMap['D'] = optionD;
-        if (optionE) optionMap['E'] = optionE;
-        if (optionF) optionMap['F'] = optionF;
-        
         const selectedTexts = savedAnswer.split('').map(letter => optionMap[letter]).filter(Boolean);
         if (selectedTexts.length > 0) setSelectedMultiple(selectedTexts);
         else setSelectedMultiple([]);
@@ -247,14 +317,17 @@ export default function TestPage() {
     }
   }
 
-  // Handler for multi-select checkboxes
+  // Handler for multi-select checkboxes with maxSelections enforcement
   const handleMultipleSelect = (option: string) => {
     setSelectedMultiple(prev => {
       if (prev.includes(option)) {
         return prev.filter(item => item !== option);
-      } else {
-        return [...prev, option];
       }
+      // enforce maximum selections
+      if (prev.length >= maxSelections) {
+        return prev; // ignore additional selections beyond max
+      }
+      return [...prev, option];
     });
   };
 
@@ -338,7 +411,7 @@ export default function TestPage() {
 
         {isMultipleChoice && (
           <p className="mb-4 text-sm text-blue-600 font-medium">
-            Select 2 answers:
+            Select {maxSelections} answer{maxSelections > 1 ? 's' : ''}:
           </p>
         )}
 
@@ -384,7 +457,7 @@ export default function TestPage() {
 
         <button
           onClick={nextQuestion}
-          disabled={isMultipleChoice ? selectedMultiple.length < 2 : !selected}
+          disabled={isMultipleChoice ? selectedMultiple.length !== maxSelections : !selected}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex-1"
         >
           {current + 1 < questions.length ? "Next →" : "Submit Test"}
